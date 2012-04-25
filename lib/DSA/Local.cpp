@@ -1244,6 +1244,11 @@ GraphBuilder::MergeConstantInitIntoNode(DSNodeHandle &NH,
     //
     // Undefined values and NULL pointers have no DSNodes, so they do nothing.
     //
+  } else if (isa<ConstantDataSequential>(C)) {
+    //
+    // ConstantDataSequential's are arrays of integers or floats, so they
+    // have no DSNodes.  Nothing to do here.
+    //
   } else {
     assert(0 && "Unknown constant type!");
   }
