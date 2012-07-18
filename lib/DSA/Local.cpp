@@ -305,7 +305,7 @@ DSNodeHandle GraphBuilder::getValueDest(Value* V) {
       N->setUnknownMarker();
     } else {
       errs() << "Unknown constant: " << *C << "\n";
-      assert(0 && "Unknown constant type!");
+      //assert(0 && "Unknown constant type!");
     }
     N = createNode(); // just create a shadow node
   } else {
