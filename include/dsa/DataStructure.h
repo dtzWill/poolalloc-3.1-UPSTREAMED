@@ -406,8 +406,14 @@ public:
 class SteensgaardDataStructures : public DataStructures {
   DSGraph * ResultGraph;
   DataStructures * DS;
-  void ResolveFunctionCall(const Function *F, const DSCallSite &Call,
-                             DSNodeHandle &RetVal);
+  typedef svset<const Function*> FuncSet;
+  std::map<DSCallSite*,FuncSet> CallGraph;
+
+  // returns 'true' if any callee sets changed
+  bool buildCallGraph();
+  void getAllCallees(const DSCallSite &CS, FuncSet &Callees);
+
+  void ResolveFunctionCall(const Function *F, const DSCallSite &Call);
   bool runOnModuleInternal(Module &M);
 
 public:

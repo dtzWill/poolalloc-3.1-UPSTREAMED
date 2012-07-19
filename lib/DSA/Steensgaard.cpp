@@ -26,6 +26,37 @@ using namespace llvm;
 
 SteensgaardDataStructures::~SteensgaardDataStructures() { }
 
+typedef svset<const Function*> FuncSet;
+
+void
+SteensgaardDataStructures::getAllCallees(const DSCallSite &CS,
+                                         FuncSet &Callees) {
+  if (CS.isDirectCall()) {
+    if (!CS.getCalleeFunc()->isDeclaration())
+      Callees.insert(CS.getCalleeFunc());
+  } else  {
+    // Get all callees.
+    // Note that we don't care about incomplete/external...
+    FuncSet TempCallees;
+    CS.getCalleeNode()->addFullFunctionSet(TempCallees);
+    // Filter out the ones that are invalid targets with respect
+    // to this particular callsite.
+    {
+      FuncSet::iterator I = TempCallees.begin();
+      while (I != TempCallees.end()) {
+        if (functionIsCallable(CS.getCallSite(), *I)) {
+          ++I;
+        } else {
+          I = TempCallees.erase(I);
+        }
+      }
+    }
+    // Insert the remaining callees (the legally callable ones)
+    // into the master 'Callees' list
+    Callees.insert(TempCallees.begin(), TempCallees.end());
+  }
+}
+
 void
 SteensgaardDataStructures::releaseMemory() {
   delete ResultGraph; 
@@ -84,31 +115,30 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
   // Start with a copy of the original call sites.
   std::list<DSCallSite> & Calls = ResultGraph->getFunctionCalls();
 
-  for (std::list<DSCallSite>::iterator CI = Calls.begin(), E = Calls.end();
-       CI != E;) {
-    DSCallSite &CurCall = *CI++;
+  // It's quite possible that a callsite will have potential callees
+  // added to it during merging.  Since we're not set up to handle
+  // that particularly elegantly, instead simply iterate through
+  // all callsites until we've done no merging.
+  // Thereby ensuring we've merged all arg/param pairs for all
+  // possible targets of each call.
+  // FWIW even on larger codes we don't need more than 2 iterations,
+  // including ones like 403.gcc and 400.perlbench
+  while (buildCallGraph()) {
+    for (std::list<DSCallSite>::iterator CI = Calls.begin(), E = Calls.end();
+         CI != E; ++CI) {
+      DSCallSite &CurCall = *CI;
+      FuncSet CallTargets = CallGraph[&CurCall];
 
-    // Loop over the called functions, eliminating as many as possible...
-    std::vector<const Function*> CallTargets;
-    if (CurCall.isDirectCall())
-      CallTargets.push_back(CurCall.getCalleeFunc());
-    else
-      CurCall.getCalleeNode()->addFullFunctionList(CallTargets);
-
-    for (unsigned c = 0; c != CallTargets.size(); ) {
-      // If we can eliminate this function call, do so!
-      const Function *F = CallTargets[c];
-      if (!F->isDeclaration()) {
-        ResolveFunctionCall(F, CurCall, ResultGraph->getReturnNodes()[F]);
-        CallTargets[c] = CallTargets.back();
-        CallTargets.pop_back();
-      } else
-        ++c;  // Cannot eliminate this call, skip over it...
-    }
-
-    if (CallTargets.empty()) {        // Eliminated all calls?
-      std::list<DSCallSite>::iterator I = CI;
-      Calls.erase(--I);               // Remove entry
+      // Loop over all callees, merging the callsite's arguments
+      // with the function's parameters.
+      for (FuncSet::iterator I = CallTargets.begin(), E = CallTargets.end();
+           I != E; ++I) {
+        // If we can eliminate this function call, do so!
+        const Function *F = *I;
+        if (!F->isDeclaration()) {
+          ResolveFunctionCall(F, CurCall);
+        }
+      }
     }
   }
 
@@ -153,16 +183,23 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
 /// and the return value for the call site context-insensitively.
 ///
 void
-SteensgaardDataStructures::ResolveFunctionCall(const Function *F, 
-                                                const DSCallSite &Call,
-                                                DSNodeHandle &RetVal) {
+SteensgaardDataStructures::ResolveFunctionCall(const Function *F,
+                                               const DSCallSite &Call) {
+  DEBUG(errs() << *Call.getCallSite().getInstruction()
+               << " calls: " << F->getName() << "\n");
 
   assert(ResultGraph != 0 && "Result graph not allocated!");
   DSGraph::ScalarMapTy &ValMap = ResultGraph->getScalarMap();
 
   // Handle the return value of the function...
+  DSNodeHandle RetVal = ResultGraph->getReturnNodeFor(*F);
   if (Call.getRetVal().getNode() && RetVal.getNode())
     RetVal.mergeWith(Call.getRetVal());
+
+  // As well as the var-args nodes...
+  DSNodeHandle VAVal = ResultGraph->getVANodeFor(*F);
+  if (Call.getVAVal().getNode() && VAVal.getNode())
+    VAVal.mergeWith(Call.getVAVal());
 
   // Loop over all pointer arguments, resolving them to their provided pointers
   unsigned PtrArgIdx = 0;
@@ -172,6 +209,28 @@ SteensgaardDataStructures::ResolveFunctionCall(const Function *F,
     if (I != ValMap.end())    // If its a pointer argument...
       I->second.mergeWith(Call.getPtrArg(PtrArgIdx++));
   }
+}
+
+bool
+SteensgaardDataStructures::buildCallGraph() {
+  std::list<DSCallSite> & Calls = ResultGraph->getFunctionCalls();
+  bool changed = false;
+  for (std::list<DSCallSite>::iterator CI = Calls.begin(), E = Calls.end();
+       CI != E; ++CI) {
+      DSCallSite &CurCall = *CI;
+
+      // Even though we're during unification, refuse to consider
+      // call edges that are /illegal/ to exist in a valid program.
+      // Use getCallCallees to do this filtering for us:
+      FuncSet Callees;
+      getAllCallees(CurCall, Callees);
+
+      FuncSet & OldCallees = CallGraph[&CurCall];
+      changed |= !(OldCallees == Callees);
+      OldCallees.swap(Callees);
+  }
+
+  return changed;
 }
 
 char SteensgaardDataStructures::ID = 0;
