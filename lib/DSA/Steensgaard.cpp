@@ -135,8 +135,13 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
            I != E; ++I) {
         // If we can eliminate this function call, do so!
         const Function *F = *I;
+        DEBUG(errs() << *CurCall.getCallSite().getInstruction() << " calls: "
+                     << F->getName() << "\n");
         if (!F->isDeclaration()) {
-          ResolveFunctionCall(F, CurCall);
+          // Let DSGraph's mergeInGraph figure out argument bindings
+          // for us, and merge the DSNodes appropriately.
+          ResultGraph->mergeInGraph(CurCall, *F, *ResultGraph,
+                                    DSGraph::DontCloneCallNodes);
         }
       }
     }
@@ -176,39 +181,6 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
 
   DEBUG(print(errs(), &M));
   return false;
-}
-
-/// ResolveFunctionCall - Resolve the actual arguments of a call to function F
-/// with the specified call site descriptor.  This function links the arguments
-/// and the return value for the call site context-insensitively.
-///
-void
-SteensgaardDataStructures::ResolveFunctionCall(const Function *F,
-                                               const DSCallSite &Call) {
-  DEBUG(errs() << *Call.getCallSite().getInstruction()
-               << " calls: " << F->getName() << "\n");
-
-  assert(ResultGraph != 0 && "Result graph not allocated!");
-  DSGraph::ScalarMapTy &ValMap = ResultGraph->getScalarMap();
-
-  // Handle the return value of the function...
-  DSNodeHandle RetVal = ResultGraph->getReturnNodeFor(*F);
-  if (Call.getRetVal().getNode() && RetVal.getNode())
-    RetVal.mergeWith(Call.getRetVal());
-
-  // As well as the var-args nodes...
-  DSNodeHandle VAVal = ResultGraph->getVANodeFor(*F);
-  if (Call.getVAVal().getNode() && VAVal.getNode())
-    VAVal.mergeWith(Call.getVAVal());
-
-  // Loop over all pointer arguments, resolving them to their provided pointers
-  unsigned PtrArgIdx = 0;
-  for (Function::const_arg_iterator AI = F->arg_begin(), AE = F->arg_end();
-       AI != AE && PtrArgIdx < Call.getNumPtrArgs(); ++AI) {
-    DSGraph::ScalarMapTy::iterator I = ValMap.find(AI);
-    if (I != ValMap.end())    // If its a pointer argument...
-      I->second.mergeWith(Call.getPtrArg(PtrArgIdx++));
-  }
 }
 
 bool
