@@ -405,7 +405,6 @@ public:
 ///
 class SteensgaardDataStructures : public DataStructures {
   DSGraph * ResultGraph;
-  DataStructures * DS;
   typedef svset<const Function*> FuncSet;
   std::map<DSCallSite*,FuncSet> CallGraph;
 

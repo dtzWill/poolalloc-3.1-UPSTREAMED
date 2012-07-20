@@ -76,35 +76,33 @@ SteensgaardDataStructures::print(llvm::raw_ostream &O, const Module *M) const {
 ///
 bool
 SteensgaardDataStructures::runOnModule(Module &M) {
-  DS = &getAnalysis<StdLibDataStructures>();
-  init(&getAnalysis<TargetData>());
+  DataStructures* DS = &getAnalysis<StdLibDataStructures>();
+  init(DS, true, true, true, false);
   return runOnModuleInternal(M);
 }
 
 bool
 SteensgaardDataStructures::runOnModuleInternal(Module &M) {
   assert(ResultGraph == 0 && "Result graph already allocated!");
-  
-  // Get a copy for the globals graph.
-  DSGraph * GG = DS->getGlobalsGraph();
-  GlobalsGraph = new DSGraph(GG, GG->getGlobalECs(), *TypeSS);
+  assert(GlobalsGraph);
 
   // Create a new, empty, graph...
-  ResultGraph = new DSGraph(GG->getGlobalECs(), getTargetData(), *TypeSS);
-  ResultGraph->setGlobalsGraph(GlobalsGraph);
-  // ResultGraph->spliceFrom(DS->getGlobalsGraph());
+  ResultGraph = new DSGraph(GlobalECs, getTargetData(), *TypeSS, GlobalsGraph);
 
-  
   // Loop over the rest of the module, merging graphs for non-external functions
   // into this graph.
   //
+  DataStructures* DS = &getAnalysis<StdLibDataStructures>();
   for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I) {
     if (!I->isDeclaration()) {
       ResultGraph->spliceFrom(DS->getDSGraph(*I));
     }
   }
 
+  // Remove trivially dead nodes resulting from merging
   ResultGraph->removeTriviallyDeadNodes();
+
+  // Recompute incomplete,
   ResultGraph->maskIncompleteMarkers();
   ResultGraph->markIncompleteNodes(DSGraph::MarkFormalArgs | DSGraph::IgnoreGlobals);
 
@@ -158,26 +156,41 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
     else
       ++I;
 
-  // Update the "incomplete" markers on the nodes, ignoring unknownness due to
-  // incoming arguments...
+  // Recompute incomplete, dropping things that were incomplete due
+  // to arguments of internal-linkage functions.
   ResultGraph->maskIncompleteMarkers();
   ResultGraph->markIncompleteNodes(DSGraph::MarkFormalArgs | DSGraph::IgnoreGlobals);
 
-  // Remove any nodes that are dead after all of the merging we have done...
-
-  ResultGraph->removeDeadNodes(DSGraph::KeepUnreachableGlobals);
-
-  GlobalsGraph->removeTriviallyDeadNodes();
-  GlobalsGraph->maskIncompleteMarkers();
-
-  // Mark external globals incomplete.
-  GlobalsGraph->markIncompleteNodes(DSGraph::IgnoreGlobals);
-
-  formGlobalECs();
-
   // Clone the global nodes into this graph.
   cloneGlobalsInto(ResultGraph, DSGraph::DontCloneCallNodes |
-                              DSGraph::DontCloneAuxCallNodes);
+                                DSGraph::DontCloneAuxCallNodes);
+  formGlobalECs();
+
+  // Propagate External and Int2Ptr flags
+  ResultGraph->computeExternalFlags(DSGraph::DontResetExternal |
+                                    DSGraph::DontMarkFormalsExternal |
+                                    DSGraph::IgnoreCallSites);
+  ResultGraph->computeIntPtrFlags();
+
+  // Remove any nodes that are dead after all of the merging we have done...
+  ResultGraph->removeDeadNodes(DSGraph::KeepUnreachableGlobals);
+  GlobalsGraph->removeTriviallyDeadNodes();
+
+  // Remove all aux calls
+
+  // Update the globals graph (for clients' querying, like CTF)
+  cloneIntoGlobals(ResultGraph, DSGraph::CloneCallNodes |
+                                DSGraph::CloneAuxCallNodes |
+                                DSGraph::StripAllocaBit);
+
+  // After all merging and all flag calculations,
+  // construct our callgraph, and put it into canonical form:
+  ResultGraph->buildCompleteCallGraph(callgraph, GlobalFunctionList, true);
+  callgraph.buildSCCs();
+  callgraph.buildRoots();
+
+  // Clear out our callgraph
+  CallGraph.clear();
 
   DEBUG(print(errs(), &M));
   return false;
