@@ -1,5 +1,6 @@
 ;RUN: dsaopt %s -dsa-cbu -analyze -check-callees=assign,A,B
 ;RUN: dsaopt %s -dsa-bu -analyze -check-callees=assign,A,B
+;RUN: dsaopt %s -dsa-steens -analyze -check-callees=assign,A,B
 
 ;Go through a list of functions passed as varargs, and call each one.
 
