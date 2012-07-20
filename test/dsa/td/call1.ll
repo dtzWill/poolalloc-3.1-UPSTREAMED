@@ -17,6 +17,7 @@
 ;RUN: dsaopt %s -dsa-td -analyze -verify-flags "func:b1:0+HM-EI"
 
 ;RUN: dsaopt %s -dsa-td -analyze -check-same-node=func:mem1,func:mem2
+;RUN: dsaopt %s -dsa-steens -analyze -check-same-node=func:mem1,func:mem2
 ;RUN: dsaopt %s -dsa-stdlib -analyze -verify-flags "func:mem1:0+HI-E"
 ;RUN: dsaopt %s -dsa-stdlib -analyze -verify-flags "func:mem2:0+HI-E"
 ;RUN: dsaopt %s -dsa-td -analyze -verify-flags "func:mem1:0+HM-IE"

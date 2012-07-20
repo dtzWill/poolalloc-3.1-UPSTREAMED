@@ -16,6 +16,7 @@ declare i32* @externFunc() nounwind
 ;RUN: dsaopt %s -dsa-td -analyze -check-callees=callExternFunc,externFunc
 ;RUN: dsaopt %s -dsa-eq -analyze -check-callees=callExternFunc,externFunc
 ;RUN: dsaopt %s -dsa-eqtd -analyze -check-callees=callExternFunc,externFunc
+;RUN: dsaopt %s -dsa-steens -analyze -check-callees=callExternFunc,externFunc
 define internal void @callExternFunc() nounwind {
 entry:
   %0 = call i32* @externFunc() nounwind
@@ -29,6 +30,7 @@ declare i32* @externFunc2() nounwind
 ;RUN: dsaopt %s -dsa-td -analyze -check-callees=callIndirectExternFunc,externFunc2
 ;RUN: dsaopt %s -dsa-eq -analyze -check-callees=callIndirectExternFunc,externFunc2
 ;RUN: dsaopt %s -dsa-eqtd -analyze -check-callees=callIndirectExternFunc,externFunc2
+;RUN: dsaopt %s -dsa-steens -analyze -check-callees=callIndirectExternFunc,externFunc2
 define internal void @callIndirectExternFunc() nounwind {
 entry:
   %0 = alloca i32* ()*
@@ -47,6 +49,7 @@ declare i32* @externFunc4() nounwind
 ;RUN: dsaopt %s -dsa-td -analyze -check-callees=getExternFP,externFunc3,externFunc4
 ;RUN: dsaopt %s -dsa-eq -analyze -check-callees=getExternFP,externFunc3,externFunc4
 ;RUN: dsaopt %s -dsa-eqtd -analyze -check-callees=getExternFP,externFunc3,externFunc4
+;RUN: dsaopt %s -dsa-steens -analyze -check-callees=getExternFP,externFunc3,externFunc4
 define i32* ()* @getExternFP() nounwind {
 entry:
   %0 = alloca i32* ()*
@@ -64,6 +67,7 @@ entry:
 ;RUN: dsaopt %s -dsa-td -analyze -check-callees=callThroughExternFP,getExternFP,externFunc4
 ;RUN: dsaopt %s -dsa-eq -analyze -check-callees=callThroughExternFP,getExternFP,externFunc4
 ;RUN: dsaopt %s -dsa-eqtd -analyze -check-callees=callThroughExternFP,getExternFP,externFunc4
+;RUN: dsaopt %s -dsa-steens -analyze -check-callees=callThroughExternFP,getExternFP,externFunc4
 define void @callThroughExternFP() nounwind {
 entry:
   %0 = call i32* ()* ()* @getExternFP() nounwind

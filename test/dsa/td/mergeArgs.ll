@@ -3,6 +3,7 @@
 ; Verify that the node is merged in TD
 
 ;RUN: dsaopt %s -dsa-td -analyze -check-same-node=func:arg1,func:arg2
+;RUN: dsaopt %s -dsa-steens -analyze -check-same-node=func:arg1,func:arg2
 ;RUN: dsaopt %s -dsa-bu -analyze -check-not-same-node=func:arg1,func:arg2
 
 ; ModuleID = 'mergeArgs.o'
