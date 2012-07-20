@@ -31,6 +31,7 @@ using namespace llvm;
 
 RegisterPass<dsa::CallTargetFinder<EQTDDataStructures> > X("calltarget-eqtd","Find Call Targets (uses DSA-EQTD)");
 RegisterPass<dsa::CallTargetFinder<TDDataStructures> > Y("calltarget-td","Find Call Targets (uses DSA-TD)");
+RegisterPass<dsa::CallTargetFinder<SteensgaardDataStructures> > Z("calltarget-steens","Find Call Targets (uses DSA-Steens)");
 namespace {
   STATISTIC (DirCall, "Number of direct calls");
   STATISTIC (IndCall, "Number of indirect calls");
@@ -111,7 +112,7 @@ void CallTargetFinder<dsa>::findIndTargets(Module &M)
                 if (!N->isIncompleteNode() && !N->isExternalNode() && IndMap[cs].size()) {
                   CompleteSites.insert(cs);
                   ++CompleteInd;
-                } 
+                }
                 if (!N->isIncompleteNode() && !N->isExternalNode() && !IndMap[cs].size()) {
                   ++CompleteEmpty;
                   DEBUG(errs() << "Call site empty: '"
@@ -136,24 +137,23 @@ void CallTargetFinder<dsa>::print(llvm::raw_ostream &O, const Module *M) const
   for (std::map<CallSite, std::vector<const Function*> >::const_iterator ii =
        IndMap.begin(),
          ee = IndMap.end(); ii != ee; ++ii) {
-
-    if (ii->first.getCalledFunction())  //only print indirect
+    const CallSite &cs = ii->first;
+    if (cs.getCalledFunction())  //only print indirect
       continue;
-    if(isa<Function>(ii->first.getCalledValue()->stripPointerCasts()))
+    if(isa<Function>(cs.getCalledValue()->stripPointerCasts()))
       continue;
-      if (!isComplete(ii->first)) {
-        O << "* ";
-        CallSite cs = ii->first;
-        cs.getInstruction()->dump();
-        O << cs.getInstruction()->getParent()->getParent()->getName().str() << " "
-          << cs.getInstruction()->getName().str() << " ";
-      }
-      O << ii->first.getInstruction() << ":";
-      for (std::vector<const Function*>::const_iterator i = ii->second.begin(),
-             e = ii->second.end(); i != e; ++i) {
-        O << " " << (*i)->getName().str();
-      }
-      O << "\n";
+    if (!isComplete(cs)) {
+      O << "* ";
+      O << cs.getInstruction() << " ";
+      O << cs.getInstruction()->getParent()->getParent()->getName() << " "
+        << cs.getInstruction()->getName() << " ";
+    }
+    O << *cs.getInstruction() << ":";
+    for (std::vector<const Function*>::const_iterator i = ii->second.begin(),
+         e = ii->second.end(); i != e; ++i) {
+      O << " " << (*i)->getName();
+    }
+    O << "\n";
   }
 }
 
