@@ -173,22 +173,23 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
                                     DSGraph::IgnoreCallSites);
   ResultGraph->computeIntPtrFlags();
 
-  // Remove any nodes that are dead after all of the merging we have done...
+  // After all merging and all flag calculations,
+  // construct our callgraph, and put it into canonical form:
+  // (This *must* be done before removeDeadNodes!)
+  ResultGraph->buildCallGraph(callgraph, GlobalFunctionList, true);
+  ResultGraph->buildCompleteCallGraph(callgraph, GlobalFunctionList, true);
+  callgraph.buildSCCs();
+  callgraph.buildRoots();
+
+  // Remove any nodes dead nodes
   ResultGraph->removeDeadNodes(DSGraph::KeepUnreachableGlobals);
   GlobalsGraph->removeTriviallyDeadNodes();
-
-  // Remove all aux calls
 
   // Update the globals graph (for clients' querying, like CTF)
   cloneIntoGlobals(ResultGraph, DSGraph::CloneCallNodes |
                                 DSGraph::CloneAuxCallNodes |
                                 DSGraph::StripAllocaBit);
 
-  // After all merging and all flag calculations,
-  // construct our callgraph, and put it into canonical form:
-  ResultGraph->buildCompleteCallGraph(callgraph, GlobalFunctionList, true);
-  callgraph.buildSCCs();
-  callgraph.buildRoots();
 
   // Clear out our callgraph
   CallGraph.clear();
