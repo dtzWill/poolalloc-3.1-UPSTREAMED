@@ -38,7 +38,7 @@ class DataStructureCallGraph : public ModulePass, public CallGraph {
   // indirect calls or calling an external function.
   CallGraphNode *CallsExternalNode;
 
-  typedef dsa::CallTargetFinder<TDDataStructures> CallTargetFinderTy;
+  typedef dsa::CallTargetFinder<SteensgaardDataStructures> CallTargetFinderTy;
 
 public:
   static char ID;
@@ -48,7 +48,7 @@ public:
   virtual bool runOnModule(Module &M);
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addRequired<TDDataStructures>();
+    AU.addRequired<SteensgaardDataStructures>();
     AU.addRequired<CallTargetFinderTy>();
     AU.setPreservesAll();
   }

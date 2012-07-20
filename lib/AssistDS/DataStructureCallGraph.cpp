@@ -76,8 +76,9 @@ void DataStructureCallGraph::addToCallGraph(Function *F) {
     return;
   }
 
-  TDDataStructures &DS = getAnalysis<TDDataStructures>();
-  DSGraph &GG = *DS.getGlobalsGraph();
+  SteensgaardDataStructures &DS = getAnalysis<SteensgaardDataStructures>();
+  //DSGraph &GG = *DS.getGlobalsGraph();
+  DSGraph &GG = *DS.getResultGraph();
   CallTargetFinderTy &CTF = getAnalysis<CallTargetFinderTy>();
 
   // Determine if the function can be called by external code by looking up
