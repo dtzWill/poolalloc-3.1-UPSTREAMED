@@ -67,6 +67,7 @@ SteensgaardDataStructures::releaseMemory() {
 // print - Implement the Pass::print method...
 void
 SteensgaardDataStructures::print(llvm::raw_ostream &O, const Module *M) const {
+  if (handleTest(O, M)) return;
   assert(ResultGraph && "Result graph has not yet been computed!");
   ResultGraph->writeGraphToFile(O, "steensgaards");
 }
