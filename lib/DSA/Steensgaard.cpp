@@ -78,7 +78,7 @@ SteensgaardDataStructures::print(llvm::raw_ostream &O, const Module *M) const {
 bool
 SteensgaardDataStructures::runOnModule(Module &M) {
   DataStructures* DS = &getAnalysis<StdLibDataStructures>();
-  init(DS, true, true, true, false);
+  init(DS, true, true, false, false);
   return runOnModuleInternal(M);
 }
 
@@ -89,6 +89,7 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
 
   // Create a new, empty, graph...
   ResultGraph = new DSGraph(GlobalECs, getTargetData(), *TypeSS, GlobalsGraph);
+  ResultGraph->setUseAuxCalls();
 
   // Loop over the rest of the module, merging graphs for non-external functions
   // into this graph.
@@ -107,21 +108,20 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
   ResultGraph->maskIncompleteMarkers();
   ResultGraph->markIncompleteNodes(DSGraph::MarkFormalArgs | DSGraph::IgnoreGlobals);
 
-  // Now that we have all of the graphs inlined, we can go about eliminating
-  // call nodes...
+
   //
-
-  // Start with a copy of the original call sites.
+  // Go through call callsites and merge in all possible callees.
+  // If afterwards we find new caller/callee pairings
+  // due to the merging we just did, then repeat the process.
+  //
+  // Ideally we'd recognize when we were merging function pointers
+  // and merge the caller/callee mappings at that point
+  // (how it's supposed to be done in Steens)
+  // but we're not set up to do that elegantly so we do this instead.
+  //
+  // On codes like 403.gcc, 400.perlbench, etc, we only require 2 iterations,
+  // so this seems like a reasonable solution.
   std::list<DSCallSite> & Calls = ResultGraph->getFunctionCalls();
-
-  // It's quite possible that a callsite will have potential callees
-  // added to it during merging.  Since we're not set up to handle
-  // that particularly elegantly, instead simply iterate through
-  // all callsites until we've done no merging.
-  // Thereby ensuring we've merged all arg/param pairs for all
-  // possible targets of each call.
-  // FWIW even on larger codes we don't need more than 2 iterations,
-  // including ones like 403.gcc and 400.perlbench
   while (buildCallGraph()) {
     for (std::list<DSCallSite>::iterator CI = Calls.begin(), E = Calls.end();
          CI != E; ++CI) {
@@ -160,18 +160,51 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
   // Recompute incomplete, dropping things that were incomplete due
   // to arguments of internal-linkage functions.
   ResultGraph->maskIncompleteMarkers();
-  ResultGraph->markIncompleteNodes(DSGraph::MarkFormalArgs | DSGraph::IgnoreGlobals);
+  ResultGraph->markIncompleteNodes(DSGraph::MarkFormalArgs |
+                                   DSGraph::IgnoreGlobals);
 
-  // Clone the global nodes into this graph.
-  cloneGlobalsInto(ResultGraph, DSGraph::DontCloneCallNodes |
-                                DSGraph::DontCloneAuxCallNodes);
-  formGlobalECs();
+  // Figure out what calls we can consider fully-resolved then,
+  // and update incomplete accordingly.
+  // We could have callsites in aux afterwards that are complete,
+  // ignore them--one iteration hack is enough for me.
+  {
+    // Remove all complete Aux calls
+    std::list<DSCallSite> & Calls = ResultGraph->getAuxFunctionCalls();
+    for (std::list<DSCallSite>::iterator CI = Calls.begin(), E = Calls.end();
+         CI != E; ) {
+      if (CI->isDirectCall() || CI->getCalleeNode()->isCompleteNode())
+        CI = Calls.erase(CI);
+      else
+        ++CI;
+    }
+
+    // Recompute incomplete, this time not marking things
+    // passed to resolved callsites as incomplete.
+    ResultGraph->maskIncompleteMarkers();
+    ResultGraph->markIncompleteNodes(DSGraph::MarkFormalArgs |
+                                     DSGraph::IgnoreGlobals);
+  }
 
   // Propagate External and Int2Ptr flags
   ResultGraph->computeExternalFlags(DSGraph::DontResetExternal |
                                     DSGraph::DontMarkFormalsExternal |
                                     DSGraph::IgnoreCallSites);
   ResultGraph->computeIntPtrFlags();
+
+  // Update globals graph
+  // This is strange, because GlobalsGraph doesn't
+  // really make sense in Steens.
+  // However other code expects us to have one,
+  // so update it accordingly.
+  cloneIntoGlobals(ResultGraph, DSGraph::DontCloneCallNodes |
+                                DSGraph::DontCloneAuxCallNodes |
+                                DSGraph::StripAllocaBit);
+  GlobalsGraph->removeTriviallyDeadNodes();
+  GlobalsGraph->maskIncompleteMarkers();
+  GlobalsGraph->markIncompleteNodes(DSGraph::IgnoreGlobals);
+  GlobalsGraph->computeExternalFlags(DSGraph::DontMarkFormalsExternal);
+  GlobalsGraph->computeIntPtrFlags();
+  formGlobalECs();
 
   // After all merging and all flag calculations,
   // construct our callgraph, and put it into canonical form:
@@ -183,13 +216,6 @@ SteensgaardDataStructures::runOnModuleInternal(Module &M) {
 
   // Remove any nodes dead nodes
   ResultGraph->removeDeadNodes(DSGraph::KeepUnreachableGlobals);
-  GlobalsGraph->removeTriviallyDeadNodes();
-
-  // Update the globals graph (for clients' querying, like CTF)
-  cloneIntoGlobals(ResultGraph, DSGraph::CloneCallNodes |
-                                DSGraph::CloneAuxCallNodes |
-                                DSGraph::StripAllocaBit);
-
 
   // Clear out our callgraph
   CallGraph.clear();
