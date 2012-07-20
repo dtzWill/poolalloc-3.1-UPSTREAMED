@@ -17,6 +17,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "calltargetfinder"
+
 #include "llvm/Module.h"
 #include "llvm/Instructions.h"
 #include "dsa/DataStructure.h"
@@ -149,6 +151,7 @@ void CallTargetFinder<dsa>::print(llvm::raw_ostream &O, const Module *M) const
         << cs.getInstruction()->getName() << " ";
     }
     O << *cs.getInstruction() << ":";
+    O << "[" << ii->second.size() << "]";
     for (std::vector<const Function*>::const_iterator i = ii->second.begin(),
          e = ii->second.end(); i != e; ++i) {
       O << " " << (*i)->getName();
